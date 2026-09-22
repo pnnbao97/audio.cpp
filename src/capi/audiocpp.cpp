@@ -539,8 +539,12 @@ audiocpp_status audiocpp_session_prepare(audiocpp_session * session, const audio
         return fail(AUDIOCPP_ERR_INVALID_ARGUMENT, "session must be non-null");
     }
     return guard([&] {
-        const rt::TaskRequest empty;
-        const auto & task_request = request != nullptr ? request->request : empty;
+        // MSVC 2019 miscompiles the reference-binding ternary here (C2059/C2530);
+        // copy instead. Local build workaround, not for upstream.
+        rt::TaskRequest task_request;
+        if (request != nullptr) {
+            task_request = request->request;
+        }
         session->session->prepare(rt::build_preparation_request(task_request));
         return AUDIOCPP_OK;
     });
@@ -557,8 +561,12 @@ audiocpp_status audiocpp_session_run(audiocpp_session * session,
         return fail(AUDIOCPP_ERR_NOT_AVAILABLE, "session was created in streaming mode");
     }
     return guard([&] {
-        const rt::TaskRequest empty;
-        const auto & task_request = request != nullptr ? request->request : empty;
+        // MSVC 2019 miscompiles the reference-binding ternary here; copy instead.
+        // Local build workaround, not for upstream.
+        rt::TaskRequest task_request;
+        if (request != nullptr) {
+            task_request = request->request;
+        }
         /* Always prepared with the request that is about to run, exactly as
          * audiocpp_cli does. build_preparation_request carries the input
          * length, so preparing once and then running a different request would
@@ -1104,8 +1112,12 @@ audiocpp_status audiocpp_stream_start(audiocpp_session * session, const audiocpp
     }
     { const audiocpp_status s = require_streaming(session); if (s != AUDIOCPP_OK) return s; }
     return guard([&] {
-        const rt::TaskRequest empty;
-        const auto & task_request = request != nullptr ? request->request : empty;
+        // MSVC 2019 miscompiles the reference-binding ternary here; copy instead.
+        // Local build workaround, not for upstream.
+        rt::TaskRequest task_request;
+        if (request != nullptr) {
+            task_request = request->request;
+        }
         session->session->prepare(rt::build_preparation_request(task_request));
         session->streaming().start_stream(task_request);
         return AUDIOCPP_OK;

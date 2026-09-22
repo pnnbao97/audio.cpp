@@ -1119,10 +1119,10 @@ float inverse_rational_quadratic(
     const float * raw_widths,
     const float * raw_heights,
     const float * raw_derivatives) {
-    constexpr int bins = 10;
-    constexpr float bound = 5.0F;
-    constexpr float min_bin = 1.0e-3F;
-    constexpr float min_derivative = 1.0e-3F;
+    static constexpr int bins = 10;
+    static constexpr float bound = 5.0F;
+    static constexpr float min_bin = 1.0e-3F;
+    static constexpr float min_derivative = 1.0e-3F;
     if (input < -bound || input > bound) {
         return input;
     }

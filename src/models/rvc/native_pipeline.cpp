@@ -245,23 +245,23 @@ void high_pass_48hz_in_place(std::vector<float> & samples) {
     if (samples.empty()) {
         return;
     }
-    constexpr int order = 5;
+    static constexpr int order = 5;
     constexpr int padlen = 18;
-    constexpr double b[order + 1] = {
+    static constexpr double b[order + 1] = {
         0.9699606451838447,
         -4.849803225919223,
         9.699606451838447,
         -9.699606451838447,
         4.849803225919223,
         -0.9699606451838447};
-    constexpr double a[order + 1] = {
+    static constexpr double a[order + 1] = {
         1.0,
         -4.939001819168364,
         9.757863526739543,
         -9.639544849413458,
         4.761506797356209,
         -0.9408236532054606};
-    constexpr double zi[order] = {
+    static constexpr double zi[order] = {
         -0.9699604796995847,
         3.8798419288925783,
         -5.819762908173043,

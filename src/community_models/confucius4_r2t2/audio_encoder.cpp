@@ -227,6 +227,9 @@ Conv2dWeightsData load_conv2d(
     };
 }
 
+#if defined(_MSC_VER) && _MSC_VER < 1930
+#pragma optimize("", off)  // MSVC 2019 ICE (C1001) in this function; local build workaround
+#endif
 std::shared_ptr<const R2T2ASRAudioEncoderWeights> load_weights(
     const R2T2ASRAssets & assets,
     ggml_backend_t backend,
@@ -314,6 +317,9 @@ std::shared_ptr<const R2T2ASRAudioEncoderWeights> load_weights(
     store->upload();
     return weights;
 }
+#if defined(_MSC_VER) && _MSC_VER < 1930
+#pragma optimize("", on)
+#endif
 
 modules::TransformerEncoderBlockWeights bind_layer(const AudioLayerWeights & weights) {
     modules::TransformerEncoderBlockWeights block;

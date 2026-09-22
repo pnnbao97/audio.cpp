@@ -381,8 +381,8 @@ TensorValue build_rmvpe_head_graph(
 std::vector<float> compute_rmvpe_log_mel(
     const std::vector<float> & waveform_16k,
     size_t threads) {
-    constexpr int64_t kSampleRate = 16000;
-    constexpr int64_t kNfft = 1024;
+    static constexpr int64_t kSampleRate = 16000;
+    static constexpr int64_t kNfft = 1024;
     constexpr int64_t kHop = 160;
     const engine::audio::STFTConfig stft_config{
         kNfft,
