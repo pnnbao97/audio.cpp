@@ -41,6 +41,57 @@ std::filesystem::path option_path(
     return {};
 }
 
+
+/// The codes as the text `reference_codes_file` reads: one frame per line.
+std::string codes_as_text(const Qwen3SpeechCodes & codes) {
+    std::ostringstream text;
+    for (int64_t frame = 0; frame < codes.frames; ++frame) {
+        for (int64_t group = 0; group < codes.code_groups; ++group) {
+            if (group > 0) {
+                text << ' ';
+            }
+            text << codes.codes[static_cast<size_t>(frame * codes.code_groups + group)];
+        }
+        text << '\n';
+    }
+    return text.str();
+}
+
+const char * gap_name(Gap gap) {
+    switch (gap) {
+        case Gap::Para:
+            return "paragraph";
+        case Gap::Sentence:
+            return "sentence";
+        case Gap::Minor:
+        default:
+            return "minor";
+    }
+}
+
+// What the talker produced for one chunk, for a caller that decodes elsewhere.
+// The boundary travels with it: a host joining the chunks itself needs to know
+// which pause belongs in front of each one (see gap_pause_sec).
+runtime::VoiceArtifact generated_codes_artifact(
+    const Qwen3SpeechCodes & codes,
+    int64_t sample_rate,
+    size_t chunk_index,
+    Gap gap_before) {
+    return runtime::make_text_artifact(
+        runtime::ArtifactKind::AcousticTokens,
+        "vieneu_v3_turbo.generated_codes",
+        codes_as_text(codes),
+        {
+            {"mime", "text/plain"},
+            {"extension", "txt"},
+            {"frames", std::to_string(codes.frames)},
+            {"code_groups", std::to_string(codes.code_groups)},
+            {"sample_rate", std::to_string(sample_rate)},
+            {"chunk_index", std::to_string(chunk_index)},
+            {"gap_before", gap_name(gap_before)},
+        });
+}
+
 // Hand back what the codec encoder just produced. Enrolling a voice costs one
 // encoder pass over the clip; a caller that keeps these codes passes them back
 // through `reference_codes_file` and never pays for it again - nor has to carry
@@ -54,20 +105,10 @@ void append_reference_codes_artifact(
     runtime::TaskResult & result,
     const Qwen3SpeechCodes & codes,
     int64_t sample_rate) {
-    std::ostringstream text;
-    for (int64_t frame = 0; frame < codes.frames; ++frame) {
-        for (int64_t group = 0; group < codes.code_groups; ++group) {
-            if (group > 0) {
-                text << ' ';
-            }
-            text << codes.codes[static_cast<size_t>(frame * codes.code_groups + group)];
-        }
-        text << '\n';
-    }
     result.output_artifacts.push_back(runtime::make_text_artifact(
         runtime::ArtifactKind::AcousticTokens,
         "vieneu_v3_turbo.reference_codes",
-        text.str(),
+        codes_as_text(codes),
         {
             // So the CLI writes `<id>.txt` verbatim rather than wrapping it.
             {"mime", "text/plain"},
@@ -587,6 +628,10 @@ runtime::TaskResult VieNeuTTSSession::run(const runtime::TaskRequest & request) 
         debug::timing_log_scalar("session.wall_ms", engine::debug::elapsed_ms(wall_start, Clock::now()));
         return result;
     }
+    // A host that decodes the codec itself asks for the codes and stops there.
+    const auto return_codes_option = runtime::find_option(request.options, {"return_codes"});
+    const bool return_codes = return_codes_option.has_value() &&
+        runtime::parse_bool_option(*return_codes_option, "return_codes");
     const int64_t text_chunk_size =
         engine::text::parse_text_chunk_size_override(request.options).value_or(kDefaultTextChunkSize);
     // Sentence-aware cut of the phoneme string, and the seam type between every
@@ -634,6 +679,7 @@ runtime::TaskResult VieNeuTTSSession::run(const runtime::TaskRequest & request) 
         !first_request.voice_clone->reference_audio.samples.empty();
     // Mono tail of the previous chunk, for measuring the pause already there.
     std::vector<float> previous_tail;
+    std::vector<runtime::VoiceArtifact> code_artifacts;
     const int64_t sample_rate = assets_->config.speech_tokenizer.output_sample_rate;
     for (size_t chunk_index = 0; chunk_index < phoneme_chunks.size(); ++chunk_index) {
         VieNeuTTSRequest qwen_request = first_request;
@@ -684,6 +730,14 @@ runtime::TaskResult VieNeuTTSSession::run(const runtime::TaskRequest & request) 
             dump << "generated_codes " << gen.frames << ' ' << gen.code_groups;
             for (const auto code : gen.codes) dump << ' ' << code;
             dump << '\n';
+        }
+        if (return_codes) {
+            code_artifacts.push_back(generated_codes_artifact(
+                codes.generated_codes,
+                sample_rate,
+                chunk_index,
+                phoneme_chunks[chunk_index].gap_before));
+            continue;
         }
         const auto decoder_start = Clock::now();
         auto chunk_audio = decode_moss_audio(codes.generated_codes, *moss_speech_decoder_);
@@ -744,6 +798,13 @@ runtime::TaskResult VieNeuTTSSession::run(const runtime::TaskRequest & request) 
     }
     release_talker_cached_step_graph();
     runtime::TaskResult result;
+    if (return_codes) {
+        result.output_artifacts = std::move(code_artifacts);
+        release_talker_cached_step_graph();
+        debug::timing_log_scalar("vieneu_v3_turbo.talker_ms", talker_ms);
+        debug::timing_log_scalar("session.wall_ms", engine::debug::elapsed_ms(wall_start, Clock::now()));
+        return result;
+    }
     result.audio_output = std::move(merged_audio);
     if (derived_reference_codes && voice_prompt.reference_codes.has_value()) {
         append_reference_codes_artifact(result, *voice_prompt.reference_codes, sample_rate);
